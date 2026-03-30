@@ -1,0 +1,21 @@
+# Python 相關
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虛擬環境
+.venv/
+venv/
+env/
+
+# PyInstaller 打包生成物
+build/
+dist/
+*.spec
+
+# 資料庫 (避免將本地測試資料上傳)
+*.db
+*.sqlite3
+
+# Mac 系統檔案
+.DS_Store
