@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -21,11 +22,13 @@ from ledger.services import (
     deactivate_project_column,
     deactivate_template_column,
     export_project_bundle,
+    export_month_region_metadata_excel,
     export_system_bundle,
     get_project,
     get_record_with_values,
     get_template,
     import_system_bundle,
+    import_month_region_metadata_excel,
     import_project_bundle,
     list_monthly_records,
     list_project_columns,
@@ -64,6 +67,12 @@ I18N = {
         "trend": "月度经营趋势",
         "trend_empty": "当前 Project 还没有可用于绘图的月度数据。",
         "trend_metric_select": "趋势指标",
+        "trend_metric_labels": "趋势图指标",
+        "project_tabs": "项目子页面",
+        "page_data_display": "数据展示",
+        "page_data_input": "数据输入",
+        "page_settings": "设置",
+        "settings": "项目设置",
         "analytics": "项目经营分析",
         "analysis_month": "分析月份",
         "income_share": "收入构成占比",
@@ -120,6 +129,14 @@ I18N = {
         "open_template_settings": "点击左侧功能选单中的 Template 设置后，可选择模板进行编辑或新建模板。",
         "system_export_desc": "整体设定导出包含 SQLite 数据库、建表 SQL、测试数据 SQL 与 JSON 快照。",
         "project_export_desc": "单个 Project 设置包包含项目资料、栏位定义和历史台账。",
+        "batch_metadata": "5. 批量月份 Metadata 导入导出",
+        "batch_export_desc": "按月份与分组导出全部项目的批量录入模板，填写后可一次性回写。",
+        "batch_export_month": "批量模板月份",
+        "batch_export_region": "批量模板分组",
+        "batch_export_button": "导出批量 Metadata Excel",
+        "batch_import_file": "上传批量 Metadata Excel",
+        "batch_import_button": "导入批量 Metadata Excel",
+        "batch_import_done": "批量导入完成：成功 {imported} 条，跳过 {skipped} 条。",
         "no_template_columns": "此 Template 暂无栏位。",
         "template_select": "选择 Template",
         "current_project": "当前 Project",
@@ -146,6 +163,12 @@ I18N = {
         "trend": "月度經營趨勢",
         "trend_empty": "目前 Project 還沒有可用於繪圖的月度資料。",
         "trend_metric_select": "趨勢指標",
+        "trend_metric_labels": "趨勢圖指標",
+        "project_tabs": "Project 子頁面",
+        "page_data_display": "數據展示",
+        "page_data_input": "數據輸入",
+        "page_settings": "設定",
+        "settings": "Project 設定",
         "analytics": "Project 經營分析",
         "analysis_month": "分析月份",
         "income_share": "收入構成占比",
@@ -202,6 +225,14 @@ I18N = {
         "open_template_settings": "點擊左側功能選單中的 Template 設定後，可選擇模板進行編輯或建立模板。",
         "system_export_desc": "整體設定導出包含 SQLite 資料庫、建表 SQL、測試資料 SQL 與 JSON 快照。",
         "project_export_desc": "單個 Project 設定包包含專案資料、欄位定義與歷史台帳。",
+        "batch_metadata": "5. 批量月份 Metadata 導入導出",
+        "batch_export_desc": "按月份與分組導出全部 Project 的批量錄入模板，填寫後可一次性回寫。",
+        "batch_export_month": "批量模板月份",
+        "batch_export_region": "批量模板分組",
+        "batch_export_button": "導出批量 Metadata Excel",
+        "batch_import_file": "上傳批量 Metadata Excel",
+        "batch_import_button": "導入批量 Metadata Excel",
+        "batch_import_done": "批量導入完成：成功 {imported} 條，跳過 {skipped} 條。",
         "no_template_columns": "此 Template 尚無欄位。",
         "template_select": "選擇 Template",
         "current_project": "目前 Project",
@@ -228,6 +259,12 @@ I18N = {
         "trend": "Monthly Trend",
         "trend_empty": "No monthly data is available for charting yet.",
         "trend_metric_select": "Trend Metrics",
+        "trend_metric_labels": "Trend Legend",
+        "project_tabs": "Project Subpages",
+        "page_data_display": "Data Display",
+        "page_data_input": "Data Input",
+        "page_settings": "Settings",
+        "settings": "Project Settings",
         "analytics": "Project Analytics",
         "analysis_month": "Analysis Month",
         "income_share": "Income Breakdown",
@@ -284,6 +321,14 @@ I18N = {
         "open_template_settings": "Open Template Settings from the left menu to create or edit templates.",
         "system_export_desc": "System export includes the SQLite database, schema SQL, seed SQL, and JSON snapshot.",
         "project_export_desc": "Project bundle includes project info, column definitions, and historical ledger data.",
+        "batch_metadata": "5. Batch Month Metadata Import / Export",
+        "batch_export_desc": "Export all projects in one region for one month, fill values, then import in one go.",
+        "batch_export_month": "Template Month",
+        "batch_export_region": "Template Region",
+        "batch_export_button": "Export Batch Metadata Excel",
+        "batch_import_file": "Upload Batch Metadata Excel",
+        "batch_import_button": "Import Batch Metadata Excel",
+        "batch_import_done": "Batch import finished: {imported} rows saved, {skipped} rows skipped.",
         "no_template_columns": "This template has no columns yet.",
         "template_select": "Select Template",
         "current_project": "Current Project",
@@ -387,33 +432,119 @@ def render_trend_chart(project_id: int) -> None:
     if trend_df.empty:
         st.info(t("trend_empty"))
         return
-    if f"trend_metrics_{project_id}" not in st.session_state:
-        st.session_state[f"trend_metrics_{project_id}"] = ["income", "expense", "profit"]
 
+    language = st.session_state.get("language", "简体中文")
     labels = {
-        "income": "Income" if st.session_state.get("language") == "English" else "Income",
-        "expense": "Expense" if st.session_state.get("language") == "English" else "Expense",
-        "profit": "Profit" if st.session_state.get("language") == "English" else "Profit",
+        "income": "Income" if language == "English" else "收入",
+        "expense": "Expense" if language == "English" else "支出",
+        "profit": "Profit" if language == "English" else "利润",
     }
-    st.caption(t("trend_metric_select"))
-    metric_cols = st.columns(3)
-    current_metrics = st.session_state[f"trend_metrics_{project_id}"]
-    for idx, metric in enumerate(["income", "expense", "profit"]):
-        with metric_cols[idx]:
-            selected = metric in current_metrics
-            if st.toggle(labels[metric], value=selected, key=f"trend_toggle_{project_id}_{metric}"):
-                if metric not in current_metrics:
-                    current_metrics.append(metric)
-            else:
-                if metric in current_metrics:
-                    current_metrics.remove(metric)
+    metric_options = ["income", "expense", "profit"]
+    metric_key = f"trend_metric_multi_{project_id}"
+    if metric_key not in st.session_state:
+        st.session_state[metric_key] = ["income", "expense", "profit"]
 
-    if not current_metrics:
-        current_metrics.append("profit")
-        st.session_state[f"trend_toggle_{project_id}_profit"] = True
-    st.session_state[f"trend_metrics_{project_id}"] = current_metrics
-    chart_df = trend_df.set_index("record_month")
-    st.line_chart(chart_df[current_metrics], use_container_width=True)
+    default_metrics = [item for item in st.session_state[metric_key] if item in metric_options]
+    if not default_metrics:
+        default_metrics = ["profit"]
+
+    if hasattr(st, "pills"):
+        selected_metrics = st.pills(
+            t("trend_metric_select"),
+            options=metric_options,
+            default=default_metrics,
+            format_func=lambda metric: labels[metric],
+            selection_mode="multi",
+            key=f"trend_metric_pills_{project_id}",
+        )
+        selected_metrics = list(selected_metrics or [])
+    else:
+        selected_metrics = st.multiselect(
+            t("trend_metric_select"),
+            options=metric_options,
+            default=default_metrics,
+            format_func=lambda metric: labels[metric],
+            key=f"trend_metric_multi_select_{project_id}",
+            label_visibility="collapsed",
+        )
+
+    if not selected_metrics:
+        selected_metrics = ["profit"]
+    st.session_state[metric_key] = selected_metrics
+
+    trend_df["month_date"] = pd.to_datetime(trend_df["record_month"] + "-01", errors="coerce")
+    trend_df = trend_df.dropna(subset=["month_date"]).sort_values("month_date")
+
+    trend_df["month_label"] = trend_df["month_date"].dt.strftime("%Y-%m")
+
+    color_map = {"income": "#4FC3F7", "expense": "#FF8A65", "profit": "#FFD54F"}
+    plot_df = trend_df.melt(
+        id_vars=["month_date", "month_label"],
+        value_vars=selected_metrics,
+        var_name="metric",
+        value_name="amount",
+    )
+    plot_df["metric_label"] = plot_df["metric"].map(labels)
+
+    domain = [labels[item] for item in selected_metrics]
+    range_colors = [color_map[item] for item in selected_metrics]
+
+    line = (
+        alt.Chart(plot_df)
+        .mark_line(
+            strokeWidth=3,
+            point=alt.OverlayMarkDef(filled=True, size=85, strokeWidth=1.2),
+        )
+        .encode(
+            x=alt.X(
+                "month_label:N",
+                sort=trend_df["month_label"].tolist(),
+                axis=alt.Axis(title=None, labelColor="#E5E7EB", labelPadding=8, tickColor="#E5E7EB"),
+            ),
+            y=alt.Y(
+                "amount:Q",
+                axis=alt.Axis(
+                    title=None,
+                    labelColor="#E5E7EB",
+                    grid=True,
+                    gridColor="#6B7280",
+                    gridDash=[6, 4],
+                    gridOpacity=0.85,
+                    tickCount=6,
+                ),
+                scale=alt.Scale(zero=True),
+            ),
+            color=alt.Color(
+                "metric_label:N",
+                scale=alt.Scale(domain=domain, range=range_colors),
+                legend=None,
+            ),
+            tooltip=[
+                alt.Tooltip("month_label:N", title="Month"),
+                alt.Tooltip("metric_label:N", title="Metric"),
+                alt.Tooltip("amount:Q", title="Value", format=",.2f"),
+            ],
+        )
+    )
+
+    chart = (
+        line.properties(height=300, padding={"bottom": 8})
+        .configure(background="#000000")
+        .configure_view(strokeOpacity=0)
+        .configure_axis(domainColor="#E5E7EB", domainWidth=1.2)
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    legend_items = [
+        f'<span style="display:inline-flex;align-items:center;margin:0 10px;color:#E5E7EB;">'
+        f'<span style="width:10px;height:10px;border-radius:50%;background:{color_map[item]};display:inline-block;margin-right:6px;"></span>'
+        f'{labels[item]}</span>'
+        for item in selected_metrics
+    ]
+    st.markdown(
+        f'<div style="display:flex;justify-content:center;align-items:center;margin-top:-2px;">{"".join(legend_items)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _build_month_options(project_id: int) -> list[str]:
@@ -469,26 +600,9 @@ def render_project_analytics(project_id: int) -> None:
         _render_breakdown_table(project_id, selected_month, "expense", t("expense_share"))
 
 
-def render_existing_records(project_id: int) -> None:
+def render_existing_records(project_id: int, key_prefix: str = "records") -> None:
     project = get_project(project_id)
-
-    # 使用 columns 讓標題與編輯按鈕並排顯示
-    title_col, action_col = st.columns([5, 2])
-    with title_col:
-        st.subheader(t("existing_records"))
-    with action_col:
-        # 在右側放入編輯名稱的彈出視窗
-        with st.popover(f"✏️ {t('rename_project')}", use_container_width=True):
-            with st.form(f"rename_form_{project_id}"):
-                new_name = st.text_input(t("project_name"), value=project["name"])
-                submitted = st.form_submit_button(t("rename_project_submit"))
-                if submitted:
-                    if not new_name.strip():
-                        st.error(t("name_required"))
-                    else:
-                        update_project_name(project_id, new_name)
-                        st.success(t("project_renamed"))
-                        st.rerun()
+    st.subheader(t("existing_records"))
 
     template_caption = f"{t('current_template')}: {project.get('template_name') or t('template_none')}"
     st.caption(f"{t('current_project')}: {project['name']} | {template_caption}")
@@ -505,9 +619,9 @@ def render_existing_records(project_id: int) -> None:
         hide_index=True,
         num_rows="fixed",
         disabled=["record_month", "project_name", "total_income", "total_expense", "net_income"],
-        key=f"records_editor_{project_id}",
+        key=f"{key_prefix}_records_editor_{project_id}",
     )
-    if st.button(t("save_table"), key=f"save_editor_{project_id}"):
+    if st.button(t("save_table"), key=f"{key_prefix}_save_editor_{project_id}"):
         save_record_editor_dataframe(project_id, pd.DataFrame(edited))
         st.success(t("records_saved"))
         st.rerun()
@@ -581,6 +695,18 @@ def render_column_management(project_id: int) -> None:
                 deactivate_project_column(removable[selected])
                 st.success(t("column_disabled"))
                 st.rerun()
+
+
+def _build_global_month_options() -> list[str]:
+    existing_months = {record["record_month"] for record in list_monthly_records()}
+    today = date.today()
+    generated: list[str] = []
+    for offset in range(-6, 7):
+        month_index = (today.year * 12 + today.month - 1) + offset
+        year = month_index // 12
+        month = month_index % 12 + 1
+        generated.append(f"{year:04d}-{month:02d}")
+    return sorted(existing_months.union(generated), reverse=True)
 
 
 def render_template_management(project_id: int) -> None:
@@ -711,6 +837,47 @@ def render_export(project_id: int) -> None:
         st.success(t("import_done"))
         st.rerun()
 
+    st.markdown(f"**{t('batch_metadata')}**")
+    st.caption(t("batch_export_desc"))
+    batch_col1, batch_col2 = st.columns(2)
+    month_options = _build_global_month_options()
+    default_month = date.today().strftime("%Y-%m")
+    default_idx = month_options.index(default_month) if default_month in month_options else 0
+    batch_month = batch_col1.selectbox(t("batch_export_month"), month_options, index=default_idx)
+    batch_region = batch_col2.selectbox(t("batch_export_region"), VALID_REGIONS)
+    st.download_button(
+        t("batch_export_button"),
+        data=export_month_region_metadata_excel(batch_month, batch_region),
+        file_name=f"metadata_{batch_region}_{batch_month}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    batch_uploaded = st.file_uploader(t("batch_import_file"), type=["xlsx"], key="batch_metadata_uploader")
+    if st.button(t("batch_import_button"), disabled=batch_uploaded is None):
+        try:
+            result = import_month_region_metadata_excel(batch_uploaded.getvalue())
+        except ValueError as exc:
+            st.error(str(exc))
+        else:
+            st.success(t("batch_import_done").format(imported=result["imported_records"], skipped=result["skipped_rows"]))
+            st.rerun()
+
+
+def render_project_settings(project_id: int) -> None:
+    st.subheader(t("settings"))
+    project = get_project(project_id)
+    with st.form(f"rename_form_{project_id}"):
+        new_name = st.text_input(t("project_name"), value=project["name"])
+        submitted = st.form_submit_button(t("rename_project_submit"))
+        if submitted:
+            if not new_name.strip():
+                st.error(t("name_required"))
+            else:
+                update_project_name(project_id, new_name)
+                st.success(t("project_renamed"))
+                st.rerun()
+    render_column_management(project_id)
+    render_export(project_id)
+
 
 def main() -> None:
     if "language" not in st.session_state:
@@ -734,11 +901,20 @@ def main() -> None:
         st.info(t("first_project_hint"))
         return
 
-    render_project_analytics(selected_project_id)
-    render_existing_records(selected_project_id)
-    render_record_entry(selected_project_id)
-    render_column_management(selected_project_id)
-    render_export(selected_project_id)
+    page_display, page_input, page_settings = st.tabs(
+        [t("page_data_display"), t("page_data_input"), t("page_settings")]
+    )
+
+    with page_display:
+        render_project_analytics(selected_project_id)
+        render_existing_records(selected_project_id, key_prefix="display")
+
+    with page_input:
+        render_existing_records(selected_project_id, key_prefix="input")
+        render_record_entry(selected_project_id)
+
+    with page_settings:
+        render_project_settings(selected_project_id)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,6 @@
 ## 啟動
 
 ```bash
-cd /Users/zhangfei/Documents/parking_ledger_mvp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
